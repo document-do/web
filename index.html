@@ -3,9 +3,9 @@
    <head>
       <meta charset="utf-8">
       <title>document.do</title>
-      <link rel="stylesheet" href="min.css?1679493662" media="all">
-      <script src="min.js?1679493662"></script>
-      
+      <link rel="stylesheet" href="min.css?1679988568" media="all">
+      <script src="min.js?1679988568"></script>
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' eth.public-rpc.com rpc.ankr.com;img-src 'self' data:;script-src 'self' 'unsafe-inline';style-src 'self' 'unsafe-inline';" />
       <meta name="viewport" content="width=device-width, minimum-scale=1.0, maximum-scale=1.0">
    </head>
    <body>
@@ -16,7 +16,7 @@
             <div id="error_"></div>
             <div id="home">
                <h1>document<span>.do</span></h1>
-               <p>Enter any document name or transaction hash to open a decentralized document or draft.</p>
+               <p>Enter any document name or <a onclick="d.slidein.open('<a onclick=\'d.help.open()\'>Help</a> &#8250; Unnamed document', 'help/unnamed_document')">transaction hash</a> to open a decentralized document or draft.</p>
                <p id="jsreq">You need to enable JavaScript for document.do to work.</p>
                <script>jsreq.style.display = 'none';</script>
                <span class="help_icon" onclick="d.help.open()">?</span>

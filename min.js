@@ -48,85 +48,7 @@ async function f(url, data, s)
 
    d.error.show();
 }
-const d = {address:{
-   async set(raw, checkName){
-
-      let dotsplit = raw.split('.');
-      const address = dotsplit[0];
-
-      if((address.length < 33 && dotsplit.length > 1) || dotsplit.length > 2 || (dotsplit.length > 1 && ['pol', 'sol', 'eth'].indexOf(dotsplit[1]) == -1))
-         return d.setInvalid();
-
-      if(dotsplit.length > 1)
-      {
-         d.doc.network = dotsplit[1];
-
-         if(['eth', 'pol'].indexOf(d.doc.network) != -1 && /^0x([A-Fa-f0-9]{64})$/.test(address))
-            d.doc.address = address;
-         else
-            return d.setInvalid();
-      }
-      else if(checkName)
-         await d.address.byName(raw);
-   },
-
-   async byName(name){
-
-      d.doc.name = name;
-      d.doc.nameHash = await d.crypt.SHA256('document.do'+name);
-      name = d.hex.encode(name);
-      if(name.length < 64)
-         name = name+'0'.repeat(64-name.length);
-
-      
-
-      const response = await fetch(d.network().rpc,
-      {
-         method: "POST",
-         headers: {
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-         },
-         body: JSON.stringify({
-            "id": 1,
-            "jsonrpc": "2.0",
-            "method": "eth_call",
-            "params": [{
-               "data": '0x20c38e2b'+name,
-               "from": '0x0000000000000000000000000000000000000000',
-               "to": d.contract
-            },"latest"
-            ]}
-         )
-      });
-
-      const result = await response.json();
-      const owner = result.result.substr(26,40);
-
-      if(owner == '0'.repeat(40))
-      {
-         if(d.doc.path)
-            d.setInvalid(`Document not found. Remove all <span class="highlight">\/<\/span> to open a draft.`);
-
-         return;
-      }
-
-      d.doc.owner = owner;
-      
-      let content = result.result.substr(194).replace(/[0]+$/,'');
-
-      if(content.length % 2)
-         content = content+'0';
-
-      d.doc.content = d.hex.decode(content);
-
-      await d.address.set(d.doc.content);
-
-      if(!d.doc.network)
-         d.doc.network = 'Polygon';
-   },
-},
-crypt:
+const d = {crypt:
 {
    sha: {},
 
@@ -176,7 +98,7 @@ crypt:
          }, fail);
       },
 
-      async decrypt(encrypted)
+      async decrypt()
       {
          await crypto.subtle.importKey("raw", d.hex.hexToBytes(d.crypt.sha.str), "aes-cbc", false, ["decrypt"]).then(function(key)
          {
@@ -185,8 +107,8 @@ crypt:
             return crypto.subtle.decrypt({name: "aes-cbc", iv: (new Uint8Array(encrypted.buffer, 0, 16))}, key, (new Uint8Array(encrypted.buffer, 16)));
          }, fail).then(function(plainText)
          {
-            d.crypt.decrypted = String.fromCharCode.apply(null, new Uint8Array(plainText));
             
+            d.crypt.decrypted = new TextDecoder().decode(plainText);
 
          }, fail);
       }
@@ -194,15 +116,19 @@ crypt:
 },
 
    contract:'0x98791798c1ca740e3e7bc0debeea382717bf5cd3',
+   router:{},
 
-   setInvalid:(t)=>{
+   setInvalid(t){
       d.invalid = 1;
 
-      if(d.doc.owner)
-         return;
+      if(d.doc.routed)
+         t = t ? t : `<em>This router document is misconfigured.</em>`;
+
+      
+         
 
       error_.innerHTML = t ? t : `<strong>Invalid document name.</strong>
-      <br>- Enter up to 32 characters (any except <span class="highlight">.#</span>)
+      <br>- Enter up to 32 characters (any except <span class="highlight">.#"</span>)
       <br>- Or enter a transaction hash with type like <span class="highlight">0x000~.eth</span>
       <div><span class="help_icon" onclick="d.nav.open()">?</span></div>`;
       document.body.setAttribute('class', 'error-body');
@@ -216,9 +142,7 @@ crypt:
       document.body.classList.add('loading');
    },
 
-   
-
-   openHTML:()=>{
+   openHTML(){
       if(typeof dant != 'undefined')
       {
          if(dant.classList.contains('checkbox-checked'))
@@ -231,12 +155,58 @@ crypt:
       document.write(d.doc.content);
    },
 
-   showContent:()=>{
+   async setRouter(raw){
+      const regex = /([^\s\n]+)\s([^\s\n]+)/gm;
+      const route = {};
+      while ((m = regex.exec(raw)) !== null)
+      {
+         if (m.index === regex.lastIndex)
+         {
+            regex.lastIndex++;
+         }
+
+         route[m[1]] = m[2];
+      }
+
+      if(Object.keys(route).length)
+      {
+         const name = d.doc.name ? d.doc.name : d.doc.addressFull;
+         d.router[name] = route;
+
+         if(!d.doc.path && route.index)
+            d.doc.path = 'index';
+
+         if(d.doc.path && !d.doc.routed)
+         {
+            await d.name.parse(`${name}/${d.doc.path}`, d.doc);
+            return d.show();
+         }
+
+         let html = '<ul>';
+            Object.keys(route).forEach((k) => {
+               link = route[k].replaceAll('"', '');
+               html += `<li><a href="#${route[k]}">${k}</a></li>`;
+            });
+         return html+'</ul>';
+      }
+
+      return '<em>The markup of this router document is invalid.</em>';
+   },
+
+   async showContent(){
       if(d.doc.content)
       {
          d.doc.content = d.doc.content.replace(/^\u0000/,'');
 
-         if(d.doc.content.match(/^<!DOCTYPE html>/i))
+         if(d.doc.content.substr(0,7) == '_router')
+         {
+            const route = await d.setRouter(d.doc.content.substr(8));
+            if(!route)
+               return;
+
+            dcontent_inner.innerHTML = route;
+         }
+         else if(d.doc.content.match(/^<!DOCTYPE html>/i))
          {
             if(localStorage.getItem(d.doc.address+'.open'))
                return d.openHTML();
@@ -325,11 +295,30 @@ crypt:
          return d.loading(1);
       }
 
-      if(!d.doc.address && d.doc.owner)
-         return d.showContent();
+      d.show();
+   },
 
+   async show()
+   {
       if(d.invalid)
          return;
+
+      if(!d.doc.address)
+      {
+         await d.name.lookup();
+
+         if(!d.doc.owner)
+         {
+            d.doc.price = d.name.price();
+            priceb.innerText = '$'+d.doc.price;
+
+            Array.from($('.docname')).forEach((e)=>{
+               e.innerText = d.doc.name;
+            });
+         }
+         else
+            return d.showContent();
+      }
 
       if(!d.doc.address)
          return d.draft.open();
@@ -516,42 +505,82 @@ hex:
    }
 },
 name:{
-   async parse(){
-      let raw = window.location.hash ? decodeURI(window.location.hash.substring(1)).toLowerCase().trim() : '';
+   async parse(raw, doc)
+   {
       d.invalid = 0;
-      d.doc = {
-         name: '',
-         address: '',
-         network: '',
-         path: 0,
-         owner:0
-      };
 
-      if(name_.value != raw)
-         name_.value = raw;
+      
+      if(typeof raw != 'undefined')
+      {
+         d.doc = doc;
 
-      if(!raw)
-         return d.name.empty();
+         if(!raw)
+            return d.setInvalid();
+      }
+      else
+      {
+         raw = window.location.hash ? decodeURI(window.location.hash.substring(1)).toLowerCase().trim() : '';
+
+         if(name_.value != raw)
+            name_.value = raw;
+
+         d.doc = {
+            name: '',
+            address: '',
+            addressFull:'',
+            network: '',
+            routed:0,
+            path: 0,
+            owner:0
+         };
+
+         if(!raw)
+            return d.name.empty();
+      }
 
       if(/^\//.test(raw))
          return d.setInvalid(`Document names can't start with <span class="highlight">\/<\/span>`);
 
-      if(/#/s.test(raw))
+      if(/[#"]/s.test(raw))
          return d.setInvalid();
 
-      const p = raw.split('/');
+      const p = raw.replace(/\/$/,'').split('/');
       const name = p[0];
       p.shift();
-      d.doc.path = p.length ? p : 0;
 
-      await d.address.set(name, 1);
+      if(!d.doc.routed)
+         d.doc.path = p.length ? p.join('/') : 0;
 
-      d.doc.price = d.name.price();
-      priceb.innerText = '$'+d.doc.price;
+      if(p.length && !d.doc.routed && d.router[name])
+      {
+         if(typeof d.router[name][d.doc.path] == 'undefined')
+            return d.setInvalid(`/${d.doc.path} not found.`);
 
-      Array.from($('.docname')).forEach((e)=>{
-         e.innerText = d.doc.name;
-      });
+         d.doc.routed = 1;
+         return await d.name.parse(d.router[name][d.doc.path], d.doc);
+      }
+
+      let dotsplit = name.split('.');
+      const address = dotsplit[0];
+
+      if((address.length < 33 && dotsplit.length > 1) || dotsplit.length > 2 || (dotsplit.length > 1 && ['pol', 'eth'].indexOf(dotsplit[1]) == -1))
+         return d.setInvalid();
+
+      if(dotsplit.length > 1)
+      {
+         d.doc.network = dotsplit[1];
+
+         if(['eth', 'pol'].indexOf(d.doc.network) != -1 && /^0x([A-Fa-f0-9]{64})$/.test(address))
+         {
+            d.doc.address = address;
+            d.doc.addressFull = name;
+         }
+         else
+            return d.setInvalid();
+      }
+
+      if(!d.doc.address)
+         d.doc.name = name;
    },
 
    setPath(t){
@@ -579,6 +608,61 @@ name:{
       }
 
       window.dtypeout = setTimeout(()=>document.location.hash = '#'+name_.value, 500);
+   },
+
+   async lookup()
+   {
+      d.doc.nameHash = await d.crypt.SHA256('document.do'+d.doc.name);
+      name = d.hex.encode(d.doc.name);
+      if(name.length < 64)
+         name = name+'0'.repeat(64-name.length);
+
+      
+
+      const response = await fetch(d.network().rpc,
+      {
+         method: "POST",
+         headers: {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+         },
+         body: JSON.stringify({
+            "id": 1,
+            "jsonrpc": "2.0",
+            "method": "eth_call",
+            "params": [{
+               "data": '0x20c38e2b'+name,
+               "from": '0x0000000000000000000000000000000000000000',
+               "to": d.contract
+            },"latest"
+            ]}
+         )
+      });
+
+      const result = await response.json();
+      const owner = result.result.substr(26,40);
+
+      if(owner == '0'.repeat(40))
+      {
+         if(d.doc.path)
+            d.setInvalid(`Document not found. Remove all <span class="highlight">\/<\/span> to open a draft.`);
+
+         return;
+      }
+
+      d.doc.owner = owner;
+      
+      let content = result.result.substr(194).replace(/[0]+$/,'');
+
+      if(content.length % 2)
+         content = content+'0';
+
+      d.doc.content = d.hex.decode(content);
+
+      
+
+      if(!d.doc.network)
+         d.doc.network = 'Polygon';
    },
 
    price()
@@ -671,8 +755,8 @@ publish:{
          {
             return d.view.tmp('publish supported_chains', `
                <div class="view_back" onclick="d.view.open('main', 'right')"></div>
-               <p>At the moment document.do supports Polygon and Ethereum.<br> Choose one of those networks in MetaMask.</p>
-               <p>Or accept the <a onclick="d.slidein.open('help')">disadvantages</a> of using a unsupported network and <a onclick="d.publish.viewConfirm()">continue</a>.</p>
+               <p>At the moment document.do supports Polygon and Ethereum.<br> Choose one of those networks in your wallet.</p>
+               <p>Or accept the disadvantages of using a unsupported network and <a onclick="d.publish.viewConfirm()">continue</a>.</p>
             `);
          }
 
@@ -775,7 +859,7 @@ publish:{
 
          const params = [{
              from: d.web3.account[0],
-             to: '0x411E10f6D5F1117117B48A9fF88e458608ce6F63',
+             to: '0xBc0566c559937babACA00E8a41c4D4c0eDE8F2E7',
              value: '0x'+parseInt(d.publish.eth.transaction.amount).toString(16)
          }];
 
@@ -925,7 +1009,12 @@ slidein:{
       if(d.slidein.locked)
          return;
 
+      const opened = d.slidein.opened;
+
       d.slidein.opened = 1;
+
+      if(opened)
+         slidein_.scrollTo(0, 0);
 
       if(page)
          d.slidein.get(page, s);
@@ -938,6 +1027,9 @@ slidein:{
 
       if(s.class)
          slidein_wrapper.classList.add('si_'+s.class);
+
+      if(opened)
+         return;
 
       if(window.innerWidth > 1159)
       {
@@ -956,7 +1048,7 @@ slidein:{
    },
 
    async get(page, s){
-      const r = await fetch('https://document.do/pages/'+page+'.html');
+      const r = await fetch('https://document.do/pages/'+page);
       slidein_content.innerHTML = await r.text();
 
       if(s.load)
@@ -1128,7 +1220,7 @@ web3:
       }
       else
       {
-         d.view.tmp('publish', `<div class="view_back" onclick="d.view.open('main', 'right')"></div>To publish a document you'll need a dapp browser like <a href="metamask" target="_blank">MetaMask</a>, <a href="metamask" target="_blank">Opera</a>.`)
+         d.view.tmp('publish', `<div class="view_back" onclick="d.view.open('main', 'right')"></div>To publish a document you'll need a dapp browser like <a href="https://metamask.io/" target="_blank">MetaMask</a>, <a href="https://www.opera.com/crypto/next" target="_blank">Opera</a>.`)
       }
    },
 

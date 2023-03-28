@@ -1,9 +1,13 @@
 *,
 *::before,
 *::after {
-   font-size: 18px;
    box-sizing: border-box;
    font-family: Courier New,Courier,monospace;
+}
+h1,
+h2,
+h3{
+   font-size: 18px;
 }
 body,
 h1,
@@ -17,6 +21,7 @@ p{
 body {
   text-rendering: optimizeSpeed;
   line-height: 1.5;
+  font-size: 18px;
 }
 input,
 textarea,
@@ -469,7 +474,15 @@ textarea:disabled{
    width:100%;
    margin:8px 0 18px;
    border:1px solid black;
-}.help_icon{
+}
+@media (max-width: 650px)
+{
+   #help,
+   #help p{
+      font-size: 16px;
+   }
+}
+.help_icon{
    border:2px solid var(--blue);
    color:var(--blue);
    width: 25px;
@@ -603,6 +616,9 @@ textarea:disabled{
 }
 #home p{
    margin:5px 16px;
+}
+#home p a{
+   color: #000;
 }.nav{
    margin:auto 16px 16px;
 }
