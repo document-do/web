@@ -65,67 +65,6 @@ a:hover{
 #apperror h1{
    color: #b31d1d;
    margin: 0;
-}#btc_payment{
-   font-size: 1.3em;
-}
-#btc_payment strong{
-   display:inline-block;
-   padding:0 5px;
-   cursor: pointer;
-   background:rgba(143, 150, 245, 0.1);
-   border-radius: 2px;
-   overflow-wrap: break-word;
-   word-wrap: break-word;
-   word-break: break-all;
-   word-break: break-word;
-   hyphens: auto;
-}
-#btc_payment div strong::after{
-   content: "COPY";
-   font-size:0.8em;
-   color: var(--blue);
-   margin-left:15px;
-   font-weight: normal;
-   display: inline-block;
-}
-#btc_payment div .copied::after{
-   content: "COPIED!";
-   color:var(--hover);
-}
-
-#btc_payment svg{
-   margin-top:19px;
-}
-#btc_payment div:first-child{
-   margin-top:15px;
-}
-#btc_payment div{
-   margin-bottom: 14px;
-}
-#btc_payment .button{
-   margin: 0;
-   width: 200px;
-   text-align:center;
-}
-
-@media (max-width: 560px)
-{
-   #btc_payment .button{
-      width:100%;
-   }
-}
-
-.si_btc_payment #slidein_title{
-   font-size: 1em;
-   margin-bottom: 22px;
-   opacity: 1;
-}
-.si_btc_payment .loadingg{
-   top: 13px;
-}
-.verifyinfo{
-   opacity: 0.8;
-   font-size: 0.8em;
 }#connect .button{
    float: none;
 }
@@ -439,7 +378,7 @@ textarea:disabled{
 }
 .button-blue:hover{
    color:#fff;
-      background:var(--darkblue);
+   background:var(--darkblue);
 }
 .button-green{
    background:var(--green);
@@ -653,11 +592,17 @@ textarea:disabled{
 }.publish{
    display: none;
    padding: 16px;
-
    word-wrap: break-word;
 }
+.publish_block{
+   float: left;
+   width: 100%;
+}
+.publish_block_top{
+   margin-bottom: 45px;
+}
 .publish h2{
-   margin:24px 0 8px;
+   margin-bottom: 8px;
 }
 .publish h2 .docname{
    display:inline-block;
@@ -666,32 +611,21 @@ textarea:disabled{
    border-radius: 2px;
 }
 #publish .button{
-   margin-top:20px;
+   margin-top:10px;
    margin-bottom: 0;
-}
-
-#publish_name .button{
-   margin-bottom: 0;
-   margin-top: 21px;
 }
 @media (max-width: 560px)
 {
-   #publish_name .button{
+   .publish_block_top{
+      margin-bottom: 35px;
+   }
+   #publish .button{
       width:100%;
       text-align: center;
    }
-}
-
-.confirm .button{
-   margin-bottom: 0;
-}
-.confirm p{
-   margin-bottom: 5px;
-}
-
-.draft_empty h2{
-      margin-top: 0;
-      margin-bottom: 0;
+   .publish h2{
+      margin-bottom: 5px;
+   }
 }
 
 .supported_chains p:nth-child(2){
@@ -819,6 +753,37 @@ ul{
    width:14px;
    height: 12px;
    margin-right: 8px;
+}
+
+li.neg::before{
+   content:"×";
+   background: none;
+   color:red;
+   font-size: 27px;
+   font-weight: 600;
+   line-height: 0em;
+   position: relative;
+   top: 2px;
+}
+
+@media (max-width: 560px)
+{
+   .pros li{
+      font-size: 15px;
+   }
+   .pros li::before{
+      background-size: 12px 10px;
+      width: 12px;
+      height: 10px;
+      margin-right: 6px;
+      position: relative;
+      top:1px;
+   }
+
+   li.neg::before{
+      font-size: 22px;
+      top:0;
+   }
 }.view_back{
    cursor: pointer;
    margin-bottom: 16px;

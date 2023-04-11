@@ -40,7 +40,10 @@ async function f(url, data, s)
    {
       const r = s.json ? await response.json() : await response.text();
 
-      return s.success(r);
+      if(s.success.constructor.name == 'AsyncFunction')
+         return await s.success(r);
+      else
+         return s.success(r);
    }
 
    if(s.error)
@@ -48,7 +51,119 @@ async function f(url, data, s)
 
    d.error.show();
 }
-const d = {crypt:
+const d = {contract:{
+   
+   id:'0xBdA842a879f3c8EB9aE389424999a71a84155a60',
+   format:
+   {
+      content()
+      {
+         const content = draftarea.value == '' ? ' ' : draftarea.value;
+         const hex = d.hex.encode(content);
+
+         let hexLength = content.length.toString(16);
+
+         let r = '0'.repeat(64-hexLength.length)+hexLength+hex;
+
+         if(zero = ((hex.length/64) % 1)*64)
+            r += '0'.repeat(64-zero);
+
+         return r;
+      },
+
+      bytes32(str, pos)
+      {
+         let r = typeof str == 'string' ? d.hex.encode(str) : '0'.repeat(64);
+
+         if(r.length < 64)
+            r += '0'.repeat(64-r.length);
+
+         return pos ? '0'.repeat(62)+'60'+r : r;
+      }
+   },
+
+   editDocument()
+   {
+      const path = d.contract.format.bytes32(0, 1);
+
+      d.web3.eth_sendTransaction({
+         value:'0',
+         methodID:'47c523e6',
+         data:d.contract.format.bytes32(d.doc.name)+path+d.contract.format.content()
+      });
+   },
+
+   buyDocument()
+   {
+      const referer = d.contract.format.bytes32(0, 1);
+
+      d.web3.eth_sendTransaction({
+         value:'0x'+parseInt(d.doc.price).toString(16),
+         methodID:'f7e7ea67',
+         data:d.contract.format.bytes32(d.doc.name)+referer+d.contract.format.content()
+      });
+   },
+
+   async ownerDocument()
+   {
+      const address = await d.web3.rpc({
+         "method": "eth_call",
+         "params": [{
+            "data": '0xb4d30d4a'+d.contract.format.bytes32(d.doc.name),
+            "from": '0x0000000000000000000000000000000000000000',
+            "to": d.contract.id
+         },"latest"]
+      });
+
+      return '0x'+address.substr(-40);
+   },
+
+   async getDocument()
+   {
+      const response = await d.web3.rpc({
+         "method": "eth_call",
+         "params": [{
+            "data": '0x1b48ba1f'+d.contract.format.bytes32(d.doc.name)+d.contract.format.bytes32(d.doc.path),
+            "from": '0x0000000000000000000000000000000000000000',
+            "to": d.contract.id
+         },"latest"]
+      });
+
+      let l = response.substr(66,64).replace(/^[0]+/,'');
+      if(l.length % 2) l = '0'+l;
+
+      let content = response.substr(130, parseInt('0x'+l)*2);
+      content = await d.hex.decode(content);
+
+      d.doc.owned = parseInt(content.substr(0,1));
+      content = content.substr(1);
+
+      if(content == '')
+      {
+         if(d.doc.path)
+            d.setInvalid(`Sub document not found. Try <a href="#${d.doc.name}">${d.doc.name}</a>.`);
+
+         return;
+      }
+
+      d.doc.content = content;
+   },
+
+   async priceDocument()
+   {
+      let response = await d.web3.rpc({
+         "method": "eth_call",
+         "params": [{
+            "data": '0xa28f74a2'+d.contract.format.bytes32(d.doc.name),
+            "from": '0x0000000000000000000000000000000000000000',
+            "to": d.contract.id
+         },"latest"]
+      });
+
+      return parseInt(response.replace(/(?<=0x)[0]+/,''));
+   }
+},
+crypt:
 {
    sha: {},
 
@@ -115,21 +230,18 @@ const d = {crypt:
    }
 },
 
-   contract:'0x98791798c1ca740e3e7bc0debeea382717bf5cd3',
-   router:{},
+   network: {
+      id:137,
+      name:'Polygon',
+      ext:'pol',
+      scan:'polygonscan.com',
+      rpc:'https://rpc.ankr.com/polygon'
+   },
 
    setInvalid(t){
       d.invalid = 1;
 
-      if(d.doc.routed)
-         t = t ? t : `<em>This router document is misconfigured.</em>`;
-
-      
-         
-
-      error_.innerHTML = t ? t : `<strong>Invalid document name.</strong>
-      <br>- Enter up to 32 characters (any except <span class="highlight">.#"</span>)
-      <br>- Or enter a transaction hash with type like <span class="highlight">0x000~.eth</span>
+      error_.innerHTML = t ? t : `<strong>Invalid document name.</strong> Enter up to 32 characters (any except <span class="highlight">.#"'\\</span>)
       <div><span class="help_icon" onclick="d.nav.open()">?</span></div>`;
       document.body.setAttribute('class', 'error-body');
    },
@@ -155,58 +267,10 @@ const d = {crypt:
       document.write(d.doc.content);
    },
 
-   async setRouter(raw){
-      const regex = /([^\s\n]+)\s([^\s\n]+)/gm;
-      const route = {};
-      while ((m = regex.exec(raw)) !== null)
-      {
-         if (m.index === regex.lastIndex)
-         {
-            regex.lastIndex++;
-         }
-
-         route[m[1]] = m[2];
-      }
-
-      if(Object.keys(route).length)
-      {
-         const name = d.doc.name ? d.doc.name : d.doc.addressFull;
-         d.router[name] = route;
-
-         if(!d.doc.path && route.index)
-            d.doc.path = 'index';
-
-         if(d.doc.path && !d.doc.routed)
-         {
-            await d.name.parse(`${name}/${d.doc.path}`, d.doc);
-            return d.show();
-         }
-
-         let html = '<ul>';
-            Object.keys(route).forEach((k) => {
-               link = route[k].replaceAll('"', '');
-               html += `<li><a href="#${route[k]}">${k}</a></li>`;
-            });
-         return html+'</ul>';
-      }
-
-      return '<em>The markup of this router document is invalid.</em>';
-   },
-
    async showContent(){
-      if(d.doc.content)
+      if(d.doc.content.replaceAll(/\s/gm,''))
       {
-         d.doc.content = d.doc.content.replace(/^\u0000/,'');
-
-         if(d.doc.content.substr(0,7) == '_router')
-         {
-            const route = await d.setRouter(d.doc.content.substr(8));
-            if(!route)
-               return;
-
-            dcontent_inner.innerHTML = route;
-         }
-         else if(d.doc.content.match(/^<!DOCTYPE html>/i))
+         if(d.doc.content.match(/^<!DOCTYPE html>/i))
          {
             if(localStorage.getItem(d.doc.address+'.open'))
                return d.openHTML();
@@ -225,64 +289,24 @@ const d = {crypt:
       else
          dcontent_inner.innerHTML = '<em>This document is empty</em>';
 
-      d.doc.showDetails = ()=>{
-
-         const html = d.doc.name ? `
-            <strong>Owner</strong> <a href="https://${d.network('pol').scan}/address/0x${d.doc.owner}" target="_blank">0x${d.doc.owner}</a><br/>
-            <strong>Source</strong> <a href="https://${d.network('pol').scan}/address/${d.contract}" target="_blank">${d.network('pol').name}</a>`
-            :
-            `<strong>Source</strong> <a href="https://${d.network().scan}/tx/${d.doc.address}" target="_blank">${d.network().name}</a>`;
-
-         d.slidein.open('Document details', 0, `<div id="dcontent_details">${html}</div>`);
+      d.showDetails = ()=>{
+         const published = ` document is published on <a href="https://${d.network.scan}/address/${d.contract.id}" target="_blank">${d.network.name}</a>`;
+         const owned = d.doc.owned ? `This${published} and owned by <a onclick="d.revealOwner(this)">click to reveal</a>. Only the owner can control this document.` : `This unowned${published}. Anyone can apply changes or <a onclick="d.view.open('publish')">get the ownership</a>.`;
+         d.slidein.open('Document information', 0, `<div id="dcontent_details">${owned}</div>`);
       }
 
       d.loading(1);
       d.view.body('dcontent');
    },
 
-   network:(nk)=>d.web3.network_data[kv(d.web3.network_data, 'ext', (nk ? nk : (d.doc.network ? d.doc.network : 'pol')))],
-
-   async transaction()
-   {
-      if(cache = localStorage.getItem(d.doc.address))
-      {
-         cache = JSON.parse(cache);
-         d.doc.owner = cache.owner;
-         d.doc.content = cache.content;
-         return true;
-      }
-
-      const result = await d.web3.rpc({
-         params:d.doc.address
-      });
-
-      if(result === null)
-      {
-         error_.innerHTML = `There was a error loading this document. We'll try again in a couple of seconds.`;
-         document.body.setAttribute('class', 'error-body');
-         return;
-      }
-
-      if(!result)
-      {
-         error_.innerHTML = `Document not found. Visit <a href="https://${d.network().scan}/tx/${d.doc.address}" target="_blank">${d.network().scan}</a> to find the transaction status.`;
-         document.body.setAttribute('class', 'error-body');
-         return;
-      }
-
-      
-
-      d.doc.owner = result.from;
-      d.doc.content = d.hex.decode(result.input);
-      localStorage.setItem(d.doc.address, JSON.stringify(d.doc));
-
-      return true;
-   },
-
    async open()
    {
       if(d.slidein.locked)
          return;
+
+      const raw = window.location.hash ? decodeURI(window.location.hash.substring(1)) : '';
+      if(raw.match(/[A-Z]|^\s|\s$|[\s]{2}|\t/gm))
+         return window.location = '#'+raw.toLowerCase().replaceAll(/[\s]+/g,' ').trim();
 
       d.loading();
       d.view.open('main', 'right');
@@ -300,31 +324,38 @@ const d = {crypt:
 
    async show()
    {
+      
+         
+
+      await d.contract.getDocument();
+
       if(d.invalid)
          return;
 
-      if(!d.doc.address)
+      if(!d.doc.owned)
       {
-         await d.name.lookup();
+         d.doc.price = await d.contract.priceDocument();
+         priceb.innerText = parseFloat(d.doc.price/1000000000000000000).toFixed(2).toString().replaceAll(/\.[0]+$|[0]+$/gm, '')+' MATIC';
 
-         if(!d.doc.owner)
-         {
-            d.doc.price = d.name.price();
-            priceb.innerText = '$'+d.doc.price;
-
-            Array.from($('.docname')).forEach((e)=>{
-               e.innerText = d.doc.name;
-            });
-         }
-         else
-            return d.showContent();
+         Array.from($('.docname')).forEach((e)=>{
+            e.innerText = d.doc.name;
+         });
       }
 
-      if(!d.doc.address)
-         return d.draft.open();
+      if(d.doc.content != '')
+         return d.showContent();
 
-      if(await d.transaction())
-         d.showContent();
+      return d.draft.open();
+   },
+
+   async revealOwner(e)
+   {
+      e.setAttribute('onclick', '');
+      e.innerText = 'Loading...';
+      const owner = await d.contract.ownerDocument();
+      e.innerText = owner;
+      e.setAttribute('href', `https://${d.network.scan}/address/${owner}`);
+      e.setAttribute('target', `_blank`);
    },
 
    copy()
@@ -461,7 +492,7 @@ help:{
       d.slidein.open('Terms','buy_terms', 0, {
          load: ()=>{
             $('.sm-link').forEach(function(i){
-               i.setAttribute('href', i.getAttribute('href')+d.contract)
+               i.setAttribute('href', i.getAttribute('href')+d.contract.id)
             });
          }
       })
@@ -505,82 +536,42 @@ hex:
    }
 },
 name:{
-   async parse(raw, doc)
+   async parse()
    {
       d.invalid = 0;
 
-      
-      if(typeof raw != 'undefined')
-      {
-         d.doc = doc;
+      raw = window.location.hash ? decodeURI(window.location.hash.substring(1)) : '';
 
-         if(!raw)
-            return d.setInvalid();
-      }
-      else
-      {
-         raw = window.location.hash ? decodeURI(window.location.hash.substring(1)).toLowerCase().trim() : '';
+      if(name_.value != raw)
+         name_.value = raw;
 
-         if(name_.value != raw)
-            name_.value = raw;
+      d.doc = {
+         name: '',
+         network: '',
+         content:'',
+         owned:null,
+         path: false
+      };
 
-         d.doc = {
-            name: '',
-            address: '',
-            addressFull:'',
-            network: '',
-            routed:0,
-            path: 0,
-            owner:0
-         };
-
-         if(!raw)
-            return d.name.empty();
-      }
+      if(!raw)
+         return d.name.empty();
 
       if(/^\//.test(raw))
          return d.setInvalid(`Document names can't start with <span class="highlight">\/<\/span>`);
 
-      if(/[#"]/s.test(raw))
+      if(/[#\."'\\]/s.test(raw))
          return d.setInvalid();
 
       const p = raw.replace(/\/$/,'').split('/');
       const name = p[0];
       p.shift();
 
-      if(!d.doc.routed)
-         d.doc.path = p.length ? p.join('/') : 0;
+      d.doc.path = p.length ? p.join('/') : 0;
 
-      if(p.length && !d.doc.routed && d.router[name])
-      {
-         if(typeof d.router[name][d.doc.path] == 'undefined')
-            return d.setInvalid(`/${d.doc.path} not found.`);
+      if(p.length > 1)
+         return d.setInvalid(`An document can only have one sub document (example/subname).`);
 
-         d.doc.routed = 1;
-         return await d.name.parse(d.router[name][d.doc.path], d.doc);
-      }
-
-      let dotsplit = name.split('.');
-      const address = dotsplit[0];
-
-      if((address.length < 33 && dotsplit.length > 1) || dotsplit.length > 2 || (dotsplit.length > 1 && ['pol', 'eth'].indexOf(dotsplit[1]) == -1))
-         return d.setInvalid();
-
-      if(dotsplit.length > 1)
-      {
-         d.doc.network = dotsplit[1];
-
-         if(['eth', 'pol'].indexOf(d.doc.network) != -1 && /^0x([A-Fa-f0-9]{64})$/.test(address))
-         {
-            d.doc.address = address;
-            d.doc.addressFull = name;
-         }
-         else
-            return d.setInvalid();
-      }
-
-      if(!d.doc.address)
-         d.doc.name = name;
+      d.doc.name = name;
    },
 
    setPath(t){
@@ -608,397 +599,6 @@ name:{
       }
 
       window.dtypeout = setTimeout(()=>document.location.hash = '#'+name_.value, 500);
-   },
-
-   async lookup()
-   {
-      d.doc.nameHash = await d.crypt.SHA256('document.do'+d.doc.name);
-      name = d.hex.encode(d.doc.name);
-      if(name.length < 64)
-         name = name+'0'.repeat(64-name.length);
-
-      
-
-      const response = await fetch(d.network().rpc,
-      {
-         method: "POST",
-         headers: {
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-         },
-         body: JSON.stringify({
-            "id": 1,
-            "jsonrpc": "2.0",
-            "method": "eth_call",
-            "params": [{
-               "data": '0x20c38e2b'+name,
-               "from": '0x0000000000000000000000000000000000000000',
-               "to": d.contract
-            },"latest"
-            ]}
-         )
-      });
-
-      const result = await response.json();
-      const owner = result.result.substr(26,40);
-
-      if(owner == '0'.repeat(40))
-      {
-         if(d.doc.path)
-            d.setInvalid(`Document not found. Remove all <span class="highlight">\/<\/span> to open a draft.`);
-
-         return;
-      }
-
-      d.doc.owner = owner;
-      
-      let content = result.result.substr(194).replace(/[0]+$/,'');
-
-      if(content.length % 2)
-         content = content+'0';
-
-      d.doc.content = d.hex.decode(content);
-
-      
-
-      if(!d.doc.network)
-         d.doc.network = 'Polygon';
-   },
-
-   price()
-   {
-      const n = d.doc.name;
-      const l = n.length;
-
-      if(l > 10)
-         return 5;
-
-      const t = n.match(/^[a-z]+$/) ? 1 : ( n.match(/^[0-9]+$/) ? 2 : ( n.match(/^[^0-9a-z]+$/i) ? 3 : 4 ) );
-
-      if(l === 1)
-      {
-         if(t === 1)
-            return 4500;
-
-         if(t === 2)
-            return 4000;
-
-         if(t === 3)
-            return 3000;
-      }
-
-      if(l === 2)
-      {
-         if(t === 1)
-            return 2500;
-
-         if(t === 2)
-            return 500;
-
-         return 200;
-      }
-
-      if(l === 3)
-      {
-         if(t === 1)
-            return 1500;
-
-         return 50;
-      }
-
-      if(l === 4)
-      {
-         if(t === 1)
-            return 900;
-
-         return 30;
-      }
-
-      if(l === 5)
-      {
-         if(t === 1)
-            return 500;
-
-         return 20;
-      }
-
-      if(l > 5 && l < 8)
-      {
-         if(t === 1)
-            return 100;
-
-         return 20;
-      }
-
-      return 15;
-   }
-},
-publish:{
-   confirm()
-   {
-      if(window.ethereum && d.web3.account.length)
-      {
-         if(d.publish.eth.payment)
-         {
-            if(parseInt(d.web3.chainID) !== parseInt(kv(d.web3.network_data, 'ext', 'eth')))
-            {
-               return d.slidein.open('Buy with Ether', 0, 'Select the Ethereum network in your wallet.', 'btc_payment');
-            }
-
-            return d.publish.eth.request();
-         }
-
-         if(draftarea.value == '')
-            return d.view.tmp('publish draft_empty', `<div class="view_back" onclick="d.view.open('main', 'right')"></div><h2>You can't publish a empty draft.</h2>`);
-
-         if(!Object.keys(d.web3.network_data).includes(parseInt(d.web3.chainID).toString()))
-         {
-            return d.view.tmp('publish supported_chains', `
-               <div class="view_back" onclick="d.view.open('main', 'right')"></div>
-               <p>At the moment document.do supports Polygon and Ethereum.<br> Choose one of those networks in your wallet.</p>
-               <p>Or accept the disadvantages of using a unsupported network and <a onclick="d.publish.viewConfirm()">continue</a>.</p>
-            `);
-         }
-
-         return d.publish.viewConfirm();
-      }
-
-      d.web3.connect();
-   },
-
-   viewConfirm()
-   {
-      const network = d.web3.network_data[parseInt(d.web3.chainID)];
-      const publish_button = 'Publish on ' + (network ? network.name : 'unsupported network');
-
-      d.view.tmp('publish confirm', `
-         <div class="view_back" onclick="d.view.open('main', 'right')"></div>
-         <p>You're about to publish the draft as a pernament irremovable uneditable document.</p>
-         <div class="button button-blue" onclick="d.publish.confirmed()">${publish_button}</div>`
-      );
-   },
-
-   async confirmed()
-   {
-      d.web3.transaction();
-   },
-
-   addressChange()
-   {
-      const form_completed = polygon_address.value && accept_terms.classList.contains('checkbox-checked') ? 1 : 0;
-
-      Array.from($('#publish_name .button')).forEach((e)=>{
-         if(form_completed)
-            e.classList.remove('button-disabled');
-         else
-            e.classList.add('button-disabled');
-      });
-   },
-
-   name()
-   {
-      d.view.open('publish_name');
-      if(typeof QRCode == 'undefined')
-      {
-         const s = document.createElement('script');
-         s.src = "https://document.do/qrcode.js";
-         document_.appendChild(s);
-      }
-   },
-
-   eth:{
-      async pay()
-      {
-         if($('#publish_name .button-disabled').length)
-            return;
-
-         d.slidein.open('<span class="loadingg"></span> Creating order...', 0, '', {class:'btc_payment'});
-         d.publish.eth.order();
-         d.publish.eth.payment = 1;
-         d.web3.connect();
-      },
-
-      order()
-      {
-         const data = {
-            name: d.doc.name,
-            owner: polygon_address.value,
-            type:'eth'
-         };
-
-         if(d.publish.eth.transaction && d.publish.eth.transaction.transaction_id)
-            data.transaction_id = d.publish.eth.transaction.transaction_id;
-
-         f('https://document.do/order/', data, {
-            json:1,
-            success:(json)=>{
-               json.status = parseInt(json.status);
-
-               if(json.status == 4)
-                  return d.publish.eth.status4();
-               else if(json.status > 0 && json.status < 3)
-                  return setTimeout(d.publish.eth.order, 60000);
-
-               if(json.amount != '')
-               {
-                  if(d.publish.eth.transaction)
-                     d.publish.eth.transaction.amount = json.amount;
-                  else
-                     d.publish.eth.transaction = {amount:json.amount};
-               }
-            }
-         });
-      },
-
-      request()
-      {
-         if(!d.publish.eth.transaction)
-            return setTimeout(d.publish.eth.request, 200);
-
-         slidein_title.innerHTML = '<span class="loadingg"></span> Waiting for you to confirm the transaction';
-
-         const params = [{
-             from: d.web3.account[0],
-             to: '0xBc0566c559937babACA00E8a41c4D4c0eDE8F2E7',
-             value: '0x'+parseInt(d.publish.eth.transaction.amount).toString(16)
-         }];
-
-         window.ethereum.request({
-               method: 'eth_sendTransaction',
-               params
-            })
-            .then((r)=>{
-               d.publish.eth.transaction.transaction_id = r;
-               d.publish.eth.status1();
-            })
-            .catch((error) => {
-               d.slidein.hide();
-
-               
-               if(error.code == 4001)
-                  return;
-         });
-      },
-
-      async confirm()
-      {
-         if(!d.publish.eth.transaction || !d.publish.eth.transaction.transaction_id)
-            return;
-
-         if(d.publish.eth.transaction.confirmed)
-            return setTimeout(d.publish.eth.order, 10000);
-
-         let tblockNumber = d.publish.eth.transaction.blockNumber;
-         if(!tblockNumber)
-         {
-            tblockNumber = await d.web3.rpc({
-               network:'eth',
-               k:'blockNumber',
-               params:d.publish.eth.transaction.transaction_id
-            });
-            d.publish.eth.transaction.blockNumber = tblockNumber = tblockNumber ? parseInt(tblockNumber) : 0;
-         }
-
-         let blockNumber = await d.web3.rpc({
-            network:'eth',
-            method:'eth_blockNumber'
-         });
-         blockNumber = blockNumber = blockNumber ? parseInt(blockNumber) : blockNumber;
-
-         if(blockNumber && tblockNumber && blockNumber-tblockNumber > 6)
-         {
-            d.publish.eth.transaction.confirmed = 1;
-            return d.publish.eth.order();
-         }
-
-         setTimeout(d.publish.eth.confirm, 30000);
-      },
-
-      status1()
-      {
-         d.slidein.lock();
-
-         d.publish.eth.order();
-         slidein_title.innerHTML = `<span class="loadingg"></span>We're verifying the transaction.`;
-         slidein_content.innerHTML = '<div class="verifyinfo">This can take up to 3 minutes. Updates will show here automaticly.</div>';
-
-         setTimeout(d.publish.eth.confirm, 30000);
-      },
-
-      status4()
-      {
-         d.publish.eth.transaction=d.publish.eth.blockNumber= d.publish.eth.payment = 0;
-         d.publish.btc.status4();
-      }
-   },
-
-   btc:{
-
-      async pay()
-      {
-         if($('#publish_name .button-disabled').length)
-            return;
-
-         if(d.publish.btc.to)
-            clearTimeout(d.publish.btc.to);
-
-         if(!d.slidein.opened)
-         {
-            d.slidein.open('Buy with Bitcoin', 0, 'Loading...', {class:'btc_payment'});
-            d.slidein.onHide = function(){
-               if(d.publish.btc.to)
-                  clearTimeout(d.publish.btc.to);
-            };
-         }
-
-         
-         await f('https://document.do/order/',
-            {
-               name: d.doc.name,
-               owner: polygon_address.value,
-               type:'btc'
-            },
-            {
-               json:1,
-               success:(json)=>{
-                  if(json.btc_address || typeof json.status != 'undefined' && typeof d.publish.btc['status'+json.status] == 'function')
-                  {
-                     d.publish.btc['status'+json.status](json);
-                     d.publish.btc.to = setTimeout(d.publish.btc.pay, 60000);
-                     return;
-                  }
-
-                  d.error.show();
-               }
-            }
-         );
-      },
-
-      status0(json)
-      {
-         const url = `bitcoin:${json.btc_address}?amount=${json.amount}`;
-         const qr = window.innerWidth > 560 ? '<div>'+QRCode({msg:url, dim:200, pad:0}).outerHTML+'</div>' : '';
-
-         slidein_title.innerHTML = '<span class="loadingg"></span> Waiting for the transaction';
-         slidein_content.innerHTML = `<div id="btc_payment">
-            <div>Send <strong id="btc_amount" onclick="navigator.clipboard.writeText(${json.amount});this.classList.add('copied');setTimeout(()=>btc_amount.classList.remove('copied'),2000)">${json.amount}</strong></div>
-            <div>To <strong id="btc_address" onclick="navigator.clipboard.writeText('${json.btc_address}');this.classList.add('copied');setTimeout(()=>btc_address.classList.remove('copied'),2000)">${json.btc_address}</strong></div>
-            ${qr}
-            <a href="${url}" target="blank" class="button button-blue">Open in wallet</a>
-         </div>`;
-      },
-
-      status1(json)
-      {
-         slidein_title.innerHTML = `<span class="loadingg"></span>Waiting for your transaction to be verified.`;
-         slidein_content.innerHTML = '<div class="verifyinfo">This can take up to 30 minutes. Updates will show here automaticly.</div>';
-      },
-
-      status4(json)
-      {
-         slidein_title.innerHTML = `Thank you! We've received the payment.`;
-         slidein_content.innerHTML = `<div>${polygon_address.value} is now the exclusive owner of <a onclick="window.location.reload(true)">${name_.value}</a>.</div>`;
-      }
    }
 },
 slidein:{
@@ -1170,99 +770,96 @@ web3:
 
       e.on('chainChanged', (id)=>{
          d.web3.chainID = id;
-         if($('.supported_chains').length)
-            d.publish.confirm();
+         d.web3.isPolygon();
       });
-      e.on('connect', (i)=> d.web3.chainID = i.chainId);
+      e.on('connect', (i)=> {
+         d.web3.chainID = i.chainId
+      });
       e.on('disconnect', ()=> d.web3.chainID = 0);
       e.on('accountsChanged', (account)=>{
          d.web3.account = account;
-         if(!d.length && $('.confirm').length)
-            d.view.open('main', 'right');
       });
    },
 
-   
-   network_data:{
-      1: {
-         name:'Ethereum',
-         ext:'eth',
-         rpc:'https://eth.public-rpc.com',
-         scan:'etherscan.io'
-      },
-      137: {
-         name:'Polygon',
-         ext:'pol',
-         scan:'polygonscan.com',
-         rpc:'https://rpc.ankr.com/polygon'
-      }
+   isPolygon()
+   {
+      if(parseInt(d.web3.chainID) === d.network.id)
+         return d.web3.sendTransaction();
+
+      d.view.tmp('publish supported_chains', `
+         <div class="view_back" onclick="d.view.open('publish', 'right')"></div>
+         <p>You need to select the ${d.network.name} network in your wallet.</p>
+      `);
    },
 
-   async connect()
+   sendTransaction()
    {
-      if(window.ethereum && window.ethereum.isConnected())
-      {
-         setTimeout(()=>{
-            if(!$('.cwaiting').length && !d.web3.account.length)
-               d.slidein.open('<div class="loadingg"></div><div class="cwaiting">Waiting for you to connect your wallet...</div>', 0);
-         }, 800);
+      if(typeof d.web3.transaction == 'function')
+         d.web3.transaction();
+   },
 
-         window.ethereum.request({method: 'eth_requestAccounts'}).then((account) => {
-            d.web3.account = account;
+   async connect(f)
+   {
+      if(!window.ethereum && !window.ethereum.isConnected())
+         return d.view.tmp('publish', `<div class="view_back" onclick="d.view.open('main', 'right')"></div>To publish a document you'll need a dapp browser like <a href="https://metamask.io/" target="_blank">MetaMask</a>, <a href="https://www.opera.com/crypto/next" target="_blank">Opera</a>.`);
 
-            if(!d.publish.eth.payment)
-               d.slidein.hide();
+      if(d.web3.account.length)
+         return d.web3.isPolygon();
 
-            window.setTimeout(d.publish.confirm, 500);
-         }).catch((error) => {
-            d.slidein.hide();
+      d.slidein.open('<div class="loadingg"></div><div class="cwaiting">Waiting for you to connect your wallet...</div>', 0);
+
+      window.ethereum.request({method: 'eth_requestAccounts'}).then((account) => {
+         d.web3.account = account;
+         window.setTimeout(d.web3.isPolygon, 500);
+      }).catch((error) => {
+         d.slidein.hide();
+      });
+   },
+
+   async eth_sendTransaction(s)
+   {
+      if(d.web3.transaction)
+         return;
+
+      d.web3.transaction = function(){
+
+         d.slidein.open('<div class="loadingg"></div><div class="cwaiting">Waiting for you to confirm the transaction...</div>', 0);
+
+         const params = [{
+             from: d.web3.account[0],
+             to: d.contract.id,
+             value: s.value,
+             data:`0x${s.methodID}${s.data}`
+          }];
+
+         window.ethereum.request({
+               method: 'eth_sendTransaction',
+               params
+            })
+            .then((result) => {
+               d.view.tmp('publish published', `
+                  <h2>Publishing on ${d.network.name}</h2>
+                  <p id="published_text">After the <a href="http://${d.network.scan}/tx/${result}" target="_blank">transaction</a> is completed you can view the document here:</br><a onclick="window.location.reload(true)">document.do#${d.doc.name}</a></p>
+               `);
+            })
+            .catch((error) => {
+
+               
+               if(error.code == 4001)
+                  return d.slidein.hide();
+
+               console.log('error', error);
          });
-      }
-      else
-      {
-         d.view.tmp('publish', `<div class="view_back" onclick="d.view.open('main', 'right')"></div>To publish a document you'll need a dapp browser like <a href="https://metamask.io/" target="_blank">MetaMask</a>, <a href="https://www.opera.com/crypto/next" target="_blank">Opera</a>.`)
-      }
-   },
 
-   async transaction()
-   {
-      d.web3.network = d.web3.network_data[parseInt(d.web3.chainID)];
+         delete d.web3.transaction;
+      };
 
-      const params = [
-        {
-          from: d.web3.account[0],
-          to: d.web3.account[0],
-          value: '0',
-          data:'0x'+d.hex.encode(draftarea.value)
-        }
-      ];
-
-      window.ethereum.request({
-            method: 'eth_sendTransaction',
-            params
-         })
-         .then((result) => {
-            const submitted = d.web3.network ? d.web3.network.name : 'the unsupported network with chainID '+parseInt(d.web3.chainID);
-            const view = d.web3.network ? `<p id="published_text">After the <a href="http://${d.web3.network.scan}/tx/${result}" target="_blank">transaction</a> is completed you can view the document here:</br><a href="#${result}.${d.web3.network.ext}">document.do#${result}.${d.web3.network.ext}</a></p>` : '';
-            d.view.tmp('publish published', `
-               <div class="view_back" onclick="d.view.open('main', 'right')"></div>
-               <h2>Document submitted to ${submitted}</h2>
-               ${view}
-            `);
-         })
-         .catch((error) => {
-
-            
-            if(error.code == 4001)
-               return;
-
-            console.log('error', error);
-      });
+      d.web3.connect();
    },
 
    async rpc(o)
    {
-      const response = await fetch(d.network(o.network ? o.network : '').rpc,{
+      const response = await fetch(d.network.rpc, {
          method: "POST",
          headers: {
             "Accept": "application/json",
@@ -1272,13 +869,11 @@ web3:
             jsonrpc: "2.0",
             method: (o.method ? o.method : 'eth_getTransactionByHash'),
             id:1,
-            params:(o.params ? [o.params] : [])
+            params:(o.params ? o.params : [])
          })
       });
 
       const json = await response.json();
-
-      
 
       if(json.error)
       {
